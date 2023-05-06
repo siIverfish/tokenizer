@@ -1,2 +1,5 @@
 
-main:=function(){a:="4";print(a);}
+main := function(){
+    a := "4";
+    print(a);
+}
