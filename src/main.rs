@@ -1,4 +1,4 @@
-use std::{fs, error::Error};
+use std::{fs, error::Error, collections::VecDeque};
 
 
 #[derive(Debug, PartialEq)]
@@ -46,7 +46,7 @@ enum Token {
 }
 
 impl Token {
-    fn from_string(string: &str) -> Token {
+    fn from_string(string: String) -> Token {
         match string.trim() {
             "{" => Token::OpenBlock (BlockKind::Code),
             "}" => Token::CloseBlock(BlockKind::Code),
@@ -65,11 +65,76 @@ impl Token {
     }
 }
 
-fn lex(string: String) {
-    let tokens: Vec<Token> = string.split([' ', '\n'])
+fn split_tokens(string: &String) -> Vec<String> {
+    let parentheses_and_semicolons: String = String::from("(){};");
+
+    let mut chars: Vec<char> = string.chars().rev().collect();
+    let mut token_strs: Vec<String> = Vec::new();
+
+    // reversed for speed
+    while !chars.is_empty() {
+        match chars.as_slice() {
+            // we don't need spaces or newlines
+            &[.., ' ' | '\n'] => { chars.pop(); },
+            
+            // special character cases to immediately stop
+            &[.., c] if parentheses_and_semicolons.contains(c) => { 
+                chars.pop(); 
+                token_strs.push(c.to_string());
+            }
+
+            // the set symbol (:=)
+            &[.., '=',':'] => {
+                chars.truncate( chars.len().saturating_sub(2) );
+                token_strs.push(":=".to_string());
+            }
+
+            // 'function' keyword
+            &[.., 'n', 'o', 'i', 't', 'c', 'n', 'u', 'f'] => {
+                chars.truncate( chars.len().saturating_sub(8) );
+                token_strs.push("function".to_string());
+            }
+
+            // process a string value
+            &[.., '"'] => {
+                let mut string: String = String::new();
+                chars.pop(); // remove first quotes
+                while chars.last().expect("unterminated string literal") != &'"' {
+                    string.push(chars.pop().expect("unterminated string literal"));
+                }
+                chars.pop(); // remove last quotes
+                token_strs.push(string);
+            }
+
+            // probably a name
+            _ => {
+                let mut name = String::new();
+                while chars.last().map_or(false, |c: &char| c.is_alphabetic()) {
+                    name.push( chars.pop().expect("pretty sure no one will see this error message.") );
+                }
+
+                token_strs.push(name);
+            },
+        }
+    }
+
+    println!("tokens from `split_tokens`: {:?}", token_strs);//.iter().rev().collect::<Vec<_>>());
+
+    token_strs
+}
+
+fn intial_tokenize(string: &String) -> Vec<Token> {
+    let tokens: Vec<Token> = split_tokens(string)
+        .into_iter()
         .map(Token::from_string)
         .filter(|x| x != &Token::None)
         .collect();
+
+    tokens
+}
+
+fn lex(string: String) {
+    let tokens = intial_tokenize(&string);
 
     let mut blocks: Vec<Block> = vec![Block::new_code()];
 
