@@ -2,4 +2,4 @@
 main := function(){
     a := "4";
     print(a);
-}
+};

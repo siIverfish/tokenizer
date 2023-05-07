@@ -22,6 +22,7 @@ impl Block {
         let tokens: Vec<Token> = initial_tokenize(split_data);
         let code: Block = parse_blocks(tokens);
         let code: Block = parse_functions(code);
+        let code: Block = parse_assignments(code);
 
         code
     }
@@ -40,7 +41,8 @@ pub enum Token {
     CloseBlock(BlockKind),
 
     BlockToken(Block),
-    Function { data: Block, code: Block }, // todo make function be work
+    Function { data: Block, code: Block },
+    Assignment { set: Box<Token>, to: Box<Token> },
 }
 
 impl Token {
@@ -154,26 +156,68 @@ pub fn parse_blocks(tokens: Vec<Token>) -> Block {
 }
 
 pub fn parse_functions(block: Block) -> Block {
+    let mut new_block: Block = Block::new(BlockKind::Code);
+    let mut iter: std::vec::IntoIter<Token> = block.tokens.into_iter();
+
+    while let Some(token) = iter.next() {
+        match token {
+            Token::StartFunction => {
+                let data_block: Block = if let Some(Token::BlockToken (block)) = iter.next() {
+                    assert_eq!(block.kind, BlockKind::Data, "function missing data block");
+                    block
+                } else { panic!("function missing data block") };
+
+                let code_block: Block = if let Some(Token::BlockToken (block)) = iter.next() {
+                    assert_eq!(block.kind, BlockKind::Code, "function missing code block");
+                    parse_functions(block)
+                } else { panic!("function missing code block") };
+
+                let function: Token = Token::Function { data: data_block, code: code_block };
+
+                new_block.tokens.push(function);
+            },
+            _ => new_block.tokens.push(token),
+        }
+    }
+
+    new_block
+}
+
+pub fn parse_assignments(block: Block) -> Block {
+    println!("parsing assigments");
     let mut new_block = Block::new(BlockKind::Code);
     let mut iter = block.tokens.into_iter();
 
     while let Some(token) = iter.next() {
         match token {
-            Token::StartFunction => {
-                let data_block = if let Some(Token::BlockToken (block)) = iter.next() {
-                    assert_eq!(block.kind, BlockKind::Data, "function missing data block");
-                    block
-                } else { panic!("function missing data block") };
+            Token::Name(name) => {
+                let next_token = iter.next().expect("got name at end");
+                if let Token::Set = next_token {
+                    let set_to_token = iter.next().expect("invalid assignment");
+                    let to = if let Token::Function { data, code } = set_to_token {
+                        // recurse to function's code block
+                        Token::Function { data, code: parse_assignments(code) }
+                    } else {
+                        set_to_token
+                    };
 
-                let code_block = if let Some(Token::BlockToken (block)) = iter.next() {
-                    assert_eq!(block.kind, BlockKind::Code, "function missing code block");
-                    block
-                } else { panic!("function missing code block") };
+                    let assignment: Token = Token::Assignment { 
+                        set: Box::new(Token::Name(name)), 
+                        to: Box::new(to)
+                    };
+                    new_block.tokens.push(assignment);
+                } else {
+                    // replace token and next_token iterated over
+                    // println!("failed to match set");
+                    new_block.tokens.push(Token::Name(name));
+                    new_block.tokens.push(next_token);
+                }
+            }
 
-                let function = Token::Function { data: data_block, code: code_block };
-
-                new_block.tokens.push(function);
-            },
+            Token::BlockToken(block) => {
+                // println!("got a block");
+                new_block.tokens.push(Token::BlockToken(parse_assignments(block)))
+            }
             _ => new_block.tokens.push(token),
         }
     }
